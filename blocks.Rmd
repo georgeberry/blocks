@@ -1,0 +1,106 @@
+---
+title: "blocks"
+output: github_document
+date: "2023-09-04"
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(stringr)
+library(caret)
+library(broom)
+library(ggrepel)
+```
+
+i'm lazy and i don't have block counts lying around so we're going to fudge block counts with (mins played) x (block %). close enough for the demonstration here.
+
+```{r}
+df = read_csv('~/Dropbox/funfund/data/vorp.csv') %>%
+  select(
+    season=Season,
+    player=Player,
+    pos=Pos,
+    age=Age,
+    team=Tm,
+    block_pct=`BLK%`,
+    mins=MP
+  ) %>%
+  mutate(
+    blocks_fudged=round(block_pct * mins / 100),
+    z_score = (blocks_fudged - mean(blocks_fudged)) / sd(blocks_fudged)
+  ) %>%
+  filter(season==2023)
+```
+
+```{r}
+hist(df$blocks_fudged, breaks=30)
+```
+
+```{r}
+hist(df$z_score)
+```
+
+```{r}
+lambda_hat = mean(df$blocks_fudged)
+N = nrow(df)
+```
+
+if poisson distributed
+
+```{r}
+hist(rpois(N, lambda_hat))
+```
+
+so that doesn't look great
+
+let's try exponential dist
+
+```{r}
+hist(rexp(N, 1/lambda_hat))
+```
+well that looks great!!
+
+```{r}
+hist(df$blocks_fudged, col=alpha('purple', 0.5), main='purple = data, yellow = model', xlab='blocks')
+hist(rexp(N, 1/lambda_hat), col=alpha('yellow', 0.5), add=T)
+```
+
+
+let's compute empirical "exponential scores"
+
+these are going to be the percentile of the observation from 0 to 1
+
+```{r}
+percentiles = pexp(df$blocks_fudged, rate=1/lambda_hat)
+percentiles = ifelse(percentiles == 0, 0.0002, percentiles)
+```
+
+```{r}
+hist(percentiles)
+```
+
+now clip these values and pretend these come from a normal dist
+
+we still have a zeros problem but rad! this looks great
+
+```{r}
+hist(qnorm(percentiles))
+```
+
+let's go look at the top players
+
+```{r}
+df$percentiles = percentiles
+df$pseudo_z_score = qnorm(percentiles)
+```
+
+```{r}
+df %>%
+  arrange(-percentiles) %>%
+  select(player, pos, block_pct, pseudo_z_score, z_score)
+```
+
+```{r}
+plot(pseudo_z_score ~ z_score, data=df)
+```
+
